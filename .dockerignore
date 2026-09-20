@@ -1,0 +1,13 @@
+.git
+.github
+.output
+.tanstack
+.vinxi
+.wrangler
+dist
+dist-ssr
+node_modules
+npm-debug.log*
+.env
+.env.*
+!.env.example
