@@ -1355,6 +1355,50 @@ export const createAd = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const c = data.credentials;
 
+    // Verify the ad account is actually usable before attempting creation —
+    // Meta's own comet mutation does not reject a disabled/restricted account
+    // up front, so without this check the tool would happily "succeed" while
+    // creating an ad that will never run.
+    try {
+      const adsmanagerRes = await fetchWithTimeout(
+        "https://adsmanager.facebook.com/adsmanager/manage/campaigns",
+        {
+          headers: {
+            cookie: c.cookieString,
+            "user-agent": UA,
+            "accept-language": "en-US,en;q=0.9",
+            accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          redirect: "follow",
+        },
+      );
+      const token = extractAccessToken(await adsmanagerRes.text());
+      if (token) {
+        const actId = data.act.replace(/^act_/, "");
+        const statusRes = await fetchWithTimeout(
+          `https://graph.facebook.com/${GRAPH_API_VERSION}/act_${actId}?fields=account_status,disable_reason,name`,
+          { headers: { authorization: `Bearer ${token}` } },
+        );
+        const statusJson = (await statusRes.json()) as {
+          account_status?: number;
+          disable_reason?: number;
+          error?: { message?: string };
+        };
+        if (typeof statusJson.account_status === "number" && statusJson.account_status !== 1) {
+          return {
+            success: false,
+            adId: null,
+            error: `الحساب الإعلاني معطّل أو غير نشط حالياً (account_status=${statusJson.account_status}${
+              statusJson.disable_reason ? `, disable_reason=${statusJson.disable_reason}` : ""
+            }). لا يمكن إنشاء إعلان عليه.`,
+          };
+        }
+      }
+    } catch {
+      // Couldn't verify account status independently; fall back to relying on
+      // Meta's own creation response below rather than blocking the attempt.
+    }
+
     const targetingObj: Record<string, unknown> = {
       genders: data.gender === "0" ? [0] : [Number(data.gender)],
       age_min: data.ageMin,
@@ -1474,15 +1518,31 @@ export const createAd = createServerFn({ method: "POST" })
       getStringPath(parsed, ["data", "create_boosted_component", "ad", "id"]) ??
       getStringPath(parsed, ["data", "create_boosted_component", "id"]);
 
+    // Meta can return an id AND real validation errors in the same response
+    // (e.g. rejected targeting, disapproved content, disabled account) — an id
+    // alone is not proof the ad actually went live, so surface any error found
+    // anywhere in the payload instead of reporting a blanket success.
+    const responseErrors =
+      getPath(parsed, ["data", "create_boosted_component", "errors"]) ??
+      getPath(parsed, ["data", "create_boosted_component", "ad", "errors"]) ??
+      getPath(parsed, ["errors"]) ??
+      getPath(parsed, ["error"]);
+    const hasErrors = Array.isArray(responseErrors) ? responseErrors.length > 0 : Boolean(responseErrors);
+    const success = res.ok && Boolean(adId) && !hasErrors;
+
     return {
-      success: Boolean(adId),
-      adId,
-      error: adId
+      success,
+      adId: success ? adId : null,
+      error: success
         ? null
         : JSON.stringify(
-            getPath(parsed, ["errors"]) ??
-              getPath(parsed, ["error"]) ??
-              "Meta لم تُرجع معرّف الإعلان.",
-          ).slice(0, 800),
+            responseErrors ?? {
+              httpStatus: res.status,
+              note: adId
+                ? "Meta أعادت معرّف إعلان مع أخطاء تحقق — لم يتم تفعيل الإعلان فعلياً."
+                : "Meta لم تُرجع معرّف الإعلان.",
+              raw: parsed,
+            },
+          ).slice(0, 1200),
     };
   });
