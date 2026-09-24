@@ -10,52 +10,33 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthMetaRouteImport } from './routes/auth/meta'
-import { Route as AuthMetaCallbackRouteImport } from './routes/auth/meta/callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthMetaRoute = AuthMetaRouteImport.update({
-  id: '/auth/meta',
-  path: '/auth/meta',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthMetaCallbackRoute = AuthMetaCallbackRouteImport.update({
-  id: '/callback',
-  path: '/callback',
-  getParentRoute: () => AuthMetaRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/auth/meta': typeof AuthMetaRouteWithChildren
-  '/auth/meta/callback': typeof AuthMetaCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/auth/meta': typeof AuthMetaRouteWithChildren
-  '/auth/meta/callback': typeof AuthMetaCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/auth/meta': typeof AuthMetaRouteWithChildren
-  '/auth/meta/callback': typeof AuthMetaCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth/meta' | '/auth/meta/callback'
+  fullPaths: '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth/meta' | '/auth/meta/callback'
-  id: '__root__' | '/' | '/auth/meta' | '/auth/meta/callback'
+  to: '/'
+  id: '__root__' | '/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AuthMetaRoute: typeof AuthMetaRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -67,38 +48,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/meta': {
-      id: '/auth/meta'
-      path: '/auth/meta'
-      fullPath: '/auth/meta'
-      preLoaderRoute: typeof AuthMetaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth/meta/callback': {
-      id: '/auth/meta/callback'
-      path: '/callback'
-      fullPath: '/auth/meta/callback'
-      preLoaderRoute: typeof AuthMetaCallbackRouteImport
-      parentRoute: typeof AuthMetaRoute
-    }
   }
 }
 
-interface AuthMetaRouteChildren {
-  AuthMetaCallbackRoute: typeof AuthMetaCallbackRoute
-}
-
-const AuthMetaRouteChildren: AuthMetaRouteChildren = {
-  AuthMetaCallbackRoute: AuthMetaCallbackRoute,
-}
-
-const AuthMetaRouteWithChildren = AuthMetaRoute._addFileChildren(
-  AuthMetaRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AuthMetaRoute: AuthMetaRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

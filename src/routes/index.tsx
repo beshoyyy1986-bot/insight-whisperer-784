@@ -10,7 +10,6 @@ import {
   parseInput,
   uploadImage,
 } from "@/lib/fb.functions";
-import { disconnectMeta, fetchMetaAssets, getMetaConnection } from "@/lib/meta.functions";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -43,14 +42,6 @@ type Creds = {
 };
 
 type Ids = { act: string; page_id: string; business_id: string };
-type MetaConnection = {
-  loading: boolean;
-  configured: boolean;
-  connected: boolean;
-  userId: string | null;
-  userName: string | null;
-  expiresAt: number | null;
-};
 
 const COUNTRIES: Record<string, string> = {
   EG: "مصر 🇪🇬",
@@ -104,14 +95,6 @@ function Index() {
   const [accounts, setAccounts] = useState<{ id: string; name: string; currency: string }[]>([]);
   const [pages, setPages] = useState<{ id: string; name: string }[]>([]);
   const [businesses, setBusinesses] = useState<{ id: string; name: string }[]>([]);
-  const [metaConnection, setMetaConnection] = useState<MetaConnection>({
-    loading: true,
-    configured: false,
-    connected: false,
-    userId: null,
-    userName: null,
-    expiresAt: null,
-  });
   const [files, setFiles] = useState<File[]>([]);
   const [hashes, setHashes] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -140,9 +123,6 @@ function Index() {
   const doFetchAdAccounts = useServerFn(fetchAdAccounts);
   const doFetchPages = useServerFn(fetchPages);
   const doBrowserDiscovery = useServerFn(discoverMetaWithPlaywright);
-  const doGetMetaConnection = useServerFn(getMetaConnection);
-  const doFetchMetaAssets = useServerFn(fetchMetaAssets);
-  const doDisconnectMeta = useServerFn(disconnectMeta);
 
   const previews = useMemo(
     () => files.map((f) => ({ name: f.name, url: URL.createObjectURL(f) })),
@@ -156,73 +136,6 @@ function Index() {
     },
     [previews],
   );
-
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const connection = await doGetMetaConnection();
-        if (!active) return;
-        setMetaConnection({ loading: false, ...connection });
-        if (connection.connected) {
-          const assets = await doFetchMetaAssets();
-          if (!active) return;
-          if (assets.success) {
-            setAccounts(assets.accounts);
-            setPages(assets.pages);
-            setBusinesses(assets.businesses);
-            setIds((previous) => ({
-              act: previous.act || assets.accounts[0]?.id || "",
-              page_id: previous.page_id || assets.pages[0]?.id || "",
-              business_id: previous.business_id || assets.businesses[0]?.id || "",
-            }));
-          }
-        }
-        const query = new URLSearchParams(window.location.search);
-        if (query.get("meta") === "connected") {
-          setNotice({ kind: "ok", text: "تم الاتصال بحساب Meta رسميًا وجلب الأصول المتاحة." });
-          window.history.replaceState({}, "", window.location.pathname);
-        } else if (query.has("meta_error")) {
-          const reason = query.get("meta_error");
-          setNotice({
-            kind: "err",
-            text:
-              reason === "not_configured"
-                ? "إعدادات Meta App غير مكتملة على الخادم."
-                : "تعذّر إكمال تسجيل Meta. أعد المحاولة وتأكد من رابط callback والصلاحيات.",
-          });
-          window.history.replaceState({}, "", window.location.pathname);
-        }
-      } catch {
-        if (active) setMetaConnection((previous) => ({ ...previous, loading: false }));
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [doFetchMetaAssets, doGetMetaConnection]);
-
-  async function refreshOfficialAssets(showNotice = true) {
-    const assets = await doFetchMetaAssets();
-    if (!assets.success) {
-      if (showNotice) setNotice({ kind: "err", text: assets.error });
-      return;
-    }
-    setAccounts(assets.accounts);
-    setPages(assets.pages);
-    setBusinesses(assets.businesses);
-    setIds((previous) => ({
-      act: previous.act || assets.accounts[0]?.id || "",
-      page_id: previous.page_id || assets.pages[0]?.id || "",
-      business_id: previous.business_id || assets.businesses[0]?.id || "",
-    }));
-    if (showNotice) {
-      setNotice({
-        kind: "ok",
-        text: `تم التحديث رسميًا — ${assets.accounts.length} حساب — ${assets.pages.length} صفحة — ${assets.businesses.length} Business`,
-      });
-    }
-  }
 
   async function runPlaywrightDiscovery() {
     const raw = cookieInput.trim();
@@ -571,13 +484,11 @@ function Index() {
                   : "bg-muted text-muted-foreground"
             }`}
           >
-            {metaConnection.connected
-              ? `Meta OAuth • ${metaConnection.userName ?? metaConnection.userId}`
-              : sessionReady
-                ? `جلسة متصفح • ${creds?.uid}`
-                : creds
-                  ? "بيانات الجلسة ناقصة"
-                  : "غير متصل"}
+            {sessionReady
+              ? `جلسة متصفح • ${creds?.uid}`
+              : creds
+                ? "بيانات الجلسة ناقصة"
+                : "غير متصل"}
           </span>
         </div>
       </header>
@@ -585,61 +496,6 @@ function Index() {
       <main className="mx-auto grid max-w-7xl gap-5 px-5 py-6 lg:grid-cols-[340px_1fr]">
         <aside className="panel h-fit space-y-4 p-5">
           <h2 className="font-display text-lg font-bold">⚙️ الإعدادات</h2>
-
-          <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-3">
-            <div>
-              <h3 className="text-sm font-bold text-primary">🔒 اتصال Meta الرسمي</h3>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                OAuth هو المسار الأكثر ثباتًا. التوكن يبقى داخل جلسة مشفرة HttpOnly ولا يظهر في
-                المتصفح.
-              </p>
-            </div>
-            {metaConnection.loading ? (
-              <p className="text-xs text-muted-foreground">جارٍ فحص الاتصال…</p>
-            ) : metaConnection.connected ? (
-              <>
-                <p className="text-xs font-semibold text-success">
-                  متصل: {metaConnection.userName ?? metaConnection.userId}
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    className="btn-ghost text-xs"
-                    onClick={() => void refreshOfficialAssets()}
-                  >
-                    تحديث الأصول
-                  </button>
-                  <button
-                    className="btn-ghost text-xs"
-                    onClick={async () => {
-                      await doDisconnectMeta();
-                      setMetaConnection((previous) => ({
-                        ...previous,
-                        connected: false,
-                        userId: null,
-                        userName: null,
-                        expiresAt: null,
-                      }));
-                      setAccounts([]);
-                      setPages([]);
-                      setBusinesses([]);
-                      setNotice({ kind: "ok", text: "تم فصل جلسة Meta الرسمية." });
-                    }}
-                  >
-                    فصل الاتصال
-                  </button>
-                </div>
-              </>
-            ) : metaConnection.configured ? (
-              <a className="btn-primary block w-full text-center" href="/auth/meta">
-                الاتصال بحساب Meta
-              </a>
-            ) : (
-              <p className="text-xs leading-5 text-warning">
-                أضف META_APP_ID وMETA_APP_SECRET وMETA_REDIRECT_URI وMETA_SESSION_SECRET لتفعيل
-                OAuth.
-              </p>
-            )}
-          </div>
 
           <div className="space-y-2">
             <h3 className="text-sm font-bold text-primary">🧭 جلسة Playwright بالكوكيز</h3>
@@ -723,9 +579,9 @@ function Index() {
             </div>
           )}
 
-          {!creds && !metaConnection.connected ? (
+          {!creds ? (
             <div className="panel p-10 text-center">
-              <p className="text-lg font-bold">⚠️ يرجى الاتصال بـMeta أو استيراد الكوكيز للبدء</p>
+              <p className="text-lg font-bold">⚠️ يرجى استيراد الكوكيز للبدء</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 استخدم القائمة الجانبية لإضافة بيانات حسابك.
               </p>
@@ -754,12 +610,8 @@ function Index() {
                     <h2 className="font-display text-lg font-bold">📊 معرفات الحساب</h2>
                     <button
                       className="btn-ghost text-xs"
-                      disabled={!creds && !metaConnection.connected}
+                      disabled={!creds}
                       onClick={async () => {
-                        if (metaConnection.connected) {
-                          await refreshOfficialAssets();
-                          return;
-                        }
                         if (!creds) return;
                         setNotice({ kind: "warn", text: "جارٍ تحديث القوائم…" });
                         const [accRes, pageRes] = await Promise.all([
@@ -847,9 +699,8 @@ function Index() {
                     </Field>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    اتصال OAuth يجلب الحسابات والصفحات والأعمال من Graph API الرسمي. جلسة Playwright
-                    تفتح صفحات Meta الثابتة داخل context مؤقت وتستخدم أي توكن مكتشف على الخادم فقط؛
-                    لا يُرسل التوكن للواجهة.
+                    جلسة Playwright تفتح صفحات Meta الثابتة داخل context مؤقت وتستخدم أي توكن مكتشف
+                    على الخادم فقط؛ لا يُرسل التوكن للواجهة.
                   </p>
                 </div>
               )}
