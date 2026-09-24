@@ -1,0 +1,11 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {"name": "META_APP_ID", "description": "Meta app ID (developers.facebook.com > App settings > Basic). Optional: enables Meta OAuth.", "requiredAtBoot": false},
+    {"name": "META_APP_SECRET", "description": "Meta app secret (same page). Optional: enables Meta OAuth.", "requiredAtBoot": false},
+    {"name": "META_REDIRECT_URI", "description": "OAuth callback: https://3000-<preview host>/auth/meta/callback; must also be registered in the Meta app's Valid OAuth Redirect URIs.", "requiredAtBoot": false},
+    {"name": "META_SESSION_SECRET", "description": "Random string, at least 32 characters, used to encrypt the session cookie.", "requiredAtBoot": false}
+  ]
+}
